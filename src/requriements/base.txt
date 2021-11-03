@@ -1,3 +1,4 @@
 git+https://www.github.com/Galvant/InstrumentKit.git
 PyQt5
 git+https://github.com/pythonguis/pyqtconfig.git
+pyserial

@@ -1,11 +1,31 @@
 from fbs_runtime.application_context.PyQt5 import ApplicationContext
-from PyQt5.QtWidgets import QMainWindow, QAction
+from PyQt5.QtWidgets import (
+    QMainWindow,
+    QAction,
+    QInputDialog,
+    QMessageBox,
+    QPushButton,
+    QCheckBox,
+    QHBoxLayout,
+    QVBoxLayout,
+    QLabel,
+    QLineEdit,
+    QDoubleSpinBox,
+    QWidget,
+)
 from PyQt5 import Qt
 
 import os, sys
 from pathlib import Path
+from typing import Union
 
+from instruments import units as u
 from pyqtconfig import ConfigManager, ConfigDialog
+import serial.tools.list_ports
+
+from auto_control import LaserAutoControl
+from power_control import PowerControl
+from mcs8a import MCS8aComm
 
 
 class DesorptionLaserControlGUI(QMainWindow):
@@ -18,9 +38,18 @@ class DesorptionLaserControlGUI(QMainWindow):
         self.version = "0.1.0"
         self.author = "Reto Trappitsch"
 
+        # main widget
+        self.mainwidget = QWidget()
+        self.setCentralWidget(self.mainwidget)
+
         # initialize default configuration
         self.config = ConfigManager()
-        self.init_configuration()
+
+        # communication
+        self.mcs8a = None
+        self.power = None
+        self.power_curr_position = None
+        self.auto_control = None
 
         # window stuff and version
         self.title = "Desorption Laser Control, v" + self.version
@@ -30,9 +59,66 @@ class DesorptionLaserControlGUI(QMainWindow):
         # initialize menubar and items that are required in subroutines
         self.menubar = self.menuBar()
         self.menubar.setNativeMenuBar(False)
+
+        # main widget
+        self.increase_button = QPushButton("+")
+        self.decrease_button = QPushButton("-")
+        self.home_button = QPushButton("Home")
+        self.position_label = QLabel()
+        self.manual_step_edit = QDoubleSpinBox()
+        self.set_position = QDoubleSpinBox()
+        self.goto_button = QPushButton("GoTo")
+        self.auto_checkbox = QCheckBox("Automatic laser control")
+        self.cps_label = QLabel()
+
+        # init all
+        self.init_configuration()
+        self.init_comms()
         self.init_menubar()
+        self.init_ui()
 
         self.show()
+
+    def init_comms(self):
+        """Initialize comms."""
+        if self.config.get("Port") is None:
+            QMessageBox.warning(
+                self,
+                "No rotation stage selected",
+                "Please select a rotation stage port to control the " "laser power.",
+            )
+            return
+
+        if not Path(self.config.get("MCS8a DLL")).is_file():
+            QMessageBox.warning(
+                self,
+                "MCS8a DLL missing",
+                "Please select a valid MCS8a DLL in the settings.",
+            )
+            return
+
+        self.mcs8a = MCS8aComm(dllpath=self.config.get("MCS8a DLL"))
+        try:
+            self.power = PowerControl(self.config.get("Port"))
+        except TimeoutError:
+            QMessageBox.warning(
+                self,
+                "Timeout",
+                "Communication with the rotation stage timed out. "
+                "Please check your settings.",
+            )
+            return
+        except IndexError:
+            QMessageBox.warning(
+                self,
+                "Index Error",
+                "It looks like the device you've chosen is not a rotation stage.",
+            )
+            return
+
+        # get current position
+        self.power_curr_position = self.power.ch.position.magnitude
+        self._set_position_label()
 
     def init_configuration(self):
         """Create / initialize local configuration."""
@@ -41,19 +127,22 @@ class DesorptionLaserControlGUI(QMainWindow):
         )
 
         default_settings = {
-            "PowerControl Port": None,
+            "Port": None,
+            "man_step": 1.0,
             "MCS8a DLL": "C:\Windows\System32\DMCS8.DLL",
-            "Manual step (deg)": 1.0,
             "Power up (deg)": 0.1,
             "Power down (deg)": 0.1,
             "Power down fast (deg)": 3.0,
-            "ROI Min (cps)": 500,
-            "ROI Max (cps)": 1500,
-            "ROI burst (cps)": 2000,
+            "ROI Min (cps)": "500",
+            "ROI Max (cps)": "1500",
+            "ROI burst (cps)": "2000",
             "Regulate every (s)": 1,
         }
 
-        metadata = {"ROI Min (cps)": {"preferred_handler": Qt.QDoubleSpinBox}}
+        metadata = {
+            "Port": {"prefer_hidden": True},
+            "man_step": {"prefer_hidden": True},
+        }
 
         self.config = ConfigManager(default_settings, filename=conf_file)
         self.config.set_many_metadata(metadata)
@@ -62,6 +151,10 @@ class DesorptionLaserControlGUI(QMainWindow):
         """Set up the menu bar."""
         # File Menu
         file_menu = self.menubar.addMenu("&File")
+
+        file_menu_init = QAction("Initialize", self)
+        file_menu_init.triggered.connect(self.init_comms)
+        file_menu.addAction(file_menu_init)
 
         file_menu_exit = QAction("Exit", self)
         file_menu_exit.triggered.connect(self.close)
@@ -78,6 +171,47 @@ class DesorptionLaserControlGUI(QMainWindow):
         settings_menu_config.triggered.connect(self.config_dialog)
         settings_menu.addAction(settings_menu_config)
 
+    def init_ui(self):
+        """Initialize the UI."""
+        layout = QVBoxLayout()
+
+        self.mainwidget.setLayout(layout)
+
+        layout.addWidget(self.position_label)
+
+        tmphlay = QHBoxLayout()
+        tmphlay.addWidget(self.decrease_button)
+        tmphlay.addStretch()
+        tmphlay.addWidget(self.manual_step_edit)
+        tmphlay.addStretch()
+        tmphlay.addWidget(self.increase_button)
+        layout.addLayout(tmphlay)
+
+        tmphlay = QHBoxLayout()
+        tmphlay.addWidget(self.set_position)
+        tmphlay.addWidget(self.goto_button)
+        tmphlay.addStretch()
+        tmphlay.addWidget(self.home_button)
+        layout.addLayout(tmphlay)
+
+        tmphlay = QHBoxLayout()
+        tmphlay.addWidget(self.auto_checkbox)
+        tmphlay.addStretch()
+        tmphlay.addWidget(self.cps_label)
+        layout.addLayout(tmphlay)
+
+        # setup
+        self.config.add_handler("man_step", self.manual_step_edit)
+        self.set_position.setValue(0.0)
+
+        # connect
+        self.manual_step_edit.valueChanged.connect(lambda x: self.config.save())
+        self.increase_button.clicked.connect(self.manual_increase)
+        self.decrease_button.clicked.connect(self.manual_decrease)
+        self.auto_checkbox.stateChanged.connect(self.laser_control)
+        self.home_button.clicked.connect(self.home)
+        self.goto_button.clicked.connect(self.goto)
+
     def config_dialog(self):
         """Execute the config dialog. """
         config_dialog = ConfigDialog(self.config, self, cols=1)
@@ -87,12 +221,98 @@ class DesorptionLaserControlGUI(QMainWindow):
 
     def config_rotation_stage(self):
         """Have user configure / select the COM port for rotation stage."""
-        pass
+        ports = serial.tools.list_ports.comports()
+        ports_list = []
+        for port, desc, hwid in sorted(ports):
+            ports_list.append(f"{port}: {desc} [{hwid}]")
+
+        item, ok = QInputDialog.getItem(
+            self, "Select port of Rotation Stage", "Ports", ports_list, 0, False
+        )
+
+        if ok and item:
+            self.config.set("Port", item.split(":")[0])
+        self.config.save()
 
     def config_update(self, update):
         """Update the configuration."""
         self.config.set_many(update.as_dict())
         self.config.save()
+
+    def goto(self):
+        """Goto a user set position."""
+        pos = self.set_position.value()
+        try:
+            self.power.ch.move(pos * u.degree)
+        except OSError:
+            # fixme: ik has some issue here with received answer
+            pass
+        self.power_curr_position = pos
+        self._set_position_label()
+
+    def home(self):
+        """Home the stage."""
+        try:
+            self.power.ch.go_home()
+        except OSError:
+            # fixme: ik has some issue here with received answer
+            pass
+        self.power_curr_position = 0
+        self._set_position_label()
+
+    def laser_control(self):
+        """Automatic control."""
+        # turn on:
+        if self.auto_checkbox.isChecked():
+            self.auto_control = LaserAutoControl(
+                self,
+                self.power,
+                self.mcs8a,
+                self.config.get("Regulate every (s)"),
+                self.config.get("Power up (deg)"),
+                self.config.get("Power down (deg)"),
+                self.config.get("Power down fast (deg)"),
+                int(self.config.get("ROI Min (cps)")),
+                int(self.config.get("ROI Max (cps)")),
+                int(self.config.get("ROI burst (cps)")),
+            )
+            self.auto_control.activate()
+        else:  # turn off
+            if self.auto_control is not None:
+                self.auto_control.deactivate()
+            self.auto_control = None
+
+    def manual_decrease(self):
+        """Increase by manual step."""
+        step = self.manual_step_edit.value()
+        try:
+            self.power.ch.move(-step * u.degree, absolute=False)
+        except OSError:
+            # fixme: ik has some issue here with received answer
+            pass
+        self.power_curr_position -= step
+        self._set_position_label()
+
+    def manual_increase(self):
+        """Increase by manual step."""
+        step = self.manual_step_edit.value()
+        try:
+            self.power.ch.move(step * u.degree, absolute=False)
+        except OSError:
+            # fixme: ik has some issue here with received answer
+            pass
+        self.power_curr_position += step
+        self._set_position_label()
+
+    def _set_position_label(self):
+        """Set position label in degrees."""
+        self.position_label.setText(
+            f"Current position: {self.power_curr_position:.3f} deg"
+        )
+
+    def _set_cps_label(self, value: Union[int, float]):
+        """Set counts per second label."""
+        self.cps_label.setText(f"ROI: {int(value)} cps")
 
 
 if __name__ == "__main__":

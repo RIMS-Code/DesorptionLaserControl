@@ -86,15 +86,27 @@ class PowerControl:
 
     def decrease_emergency(self) -> None:
         """Decrease by emergency step."""
-        self.ch.move(-self._step_down_em, absolute=False)
+        try:
+            self.ch.move(-self._step_down_em, absolute=False)
+        except OSError:
+            # fixme: ik has some issue here with received answer
+            pass
 
     def home(self) -> None:
         """Home the device."""
-        self.ch.go_home()
+        try:
+            self.ch.go_home()
+        except OSError:
+            # fixme: ik has some issue here with received answer
+            pass
 
     def increase(self) -> None:
         """Increases by one step."""
-        self.ch.move(self._step_up, absolute=False)
+        try:
+            self.ch.move(self._step_up, absolute=False)
+        except OSError:
+            # fixme: ik has some issue here with received answer
+            pass
 
 
 if __name__ == "__main__":
