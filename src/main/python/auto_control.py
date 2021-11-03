@@ -1,5 +1,6 @@
 """Automatically control the desorption laser power."""
 
+# from PyQt5.QtWidgets import QMessageBox
 from PyQt5.QtCore import QTimer
 
 from mcs8a import MCS8aComm
@@ -19,6 +20,7 @@ class LaserAutoControl:
         range_min: int,
         range_max: int,
         range_emg: int,
+        tdc_ch: int,
     ):
         """Automatic laser control.
 
@@ -31,13 +33,17 @@ class LaserAutoControl:
         :param range_min: Minimum range
         :param range_max: Maximum range
         :param range_emg: Emergency range
+        :param tdc_ch: Channel of the the TDC stop signal.
         """
         self.parent = parent
 
         self.power = power
         self.power.step_down = dec_stp
+        self.dec_stp = dec_stp
         self.power.step_down_em = dec_emg
+        self.dec_emg = dec_emg
         self.power.step_up = inc_stp
+        self.inc_step = inc_stp
 
         self.mcs8a = mcs8a
 
@@ -47,6 +53,8 @@ class LaserAutoControl:
         self.range_max = range_max
         self.delta_range = range_max - range_min
         self.range_emg = range_emg
+
+        self.mcs8a.active_channel = tdc_ch - 1  # set stop channel
 
         self._is_running = False
 
@@ -72,6 +80,10 @@ class LaserAutoControl:
         if not self._is_running:
             return
 
+        # if the acquisition is not running, quit
+        if not self.mcs8a.is_measuring:
+            return
+
         # DO ADJUSTMENT ROUTINE
         current_cps = self.mcs8a.roi_rate
         self.parent._set_cps_label(current_cps)
@@ -79,12 +91,34 @@ class LaserAutoControl:
         # COMPARE
         if current_cps > self.range_emg:  # EMERGENCY TURN DOWN
             self.power.decrease_emergency()
+            # fixme: these updates really shouldn't be here.
+            self.parent.power_curr_position -= self.dec_emg
         elif current_cps < self.range_min + self.delta_range / 3:  # regular increase
             self.power.increase()
+            # fixme see above
+            self.parent.power_curr_position += self.inc_step
         elif current_cps > self.range_max - self.delta_range / 3:
             self.power.decrease()
+            # fixme see above
+            self.parent.power_curr_position -= self.dec_stp
 
-        print("doing a step.")
+        status = self.mcs8a._acquisition_status
+
+        # QMessageBox.information(
+        #     self.parent,
+        #     "something",
+        #     f"Started: {status.started}\n"
+        #     f"Runtime: {status.runtime}\n"
+        #     f"TotSum: {status.totalsum}\n"
+        #     f"ROISum: {status.roisum}\n"
+        #     f"ROIRate: {status.roirate}\n"
+        #     f"OFLS: {status.ofls}\n"
+        #     f"Sweeps: {status.sweeps}\n"
+        #     f"Stevents: {status.stevents}\n"
+        #     f"Maxeval: {status.maxval}\n",
+        # )
+
+        # print("doing a step.")
 
         # thread out timer
         self.wait_timer.start(self.delta_t)

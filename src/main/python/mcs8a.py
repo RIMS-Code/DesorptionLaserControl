@@ -10,8 +10,19 @@ class MCS8aComm:
         """Initialize MCS8a Comms class."""
         self.dll = ctypes.windll.LoadLibrary(dllpath)
 
+        self._active_channel = 0
+
         # empty variables
         self._acquisition_status = None
+
+    @property
+    def active_channel(self) -> int:
+        """Get / set the active channel (starts counting at zero!)"""
+        return self._active_channel
+
+    @active_channel.setter
+    def active_channel(self, value: int):
+        self._active_channel = value
 
     @property
     def is_measuring(self) -> bool:
@@ -19,7 +30,7 @@ class MCS8aComm:
 
         :return: Status of measurement.
         """
-        self._acquisition_status()
+        self._update_acquisition_status()
         return self._acquisition_status.started == 1
 
     @property
@@ -38,13 +49,14 @@ class MCS8aComm:
     def roi_rate(self) -> float:
         """Get the rate countrate in counts per seconds in the ROI."""
         self._update_acquisition_status()
-        return self._acquisition_status.roirate
+        # todo: not sure why, but this seems to be the ROI Rate! check data structure
+        return self._acquisition_status.ofls
 
     # METHODS #
     def _update_acquisition_status(self):
         """Grab the acquisition status and update the class reference."""
         status = AcqStatus()
-        self.dll.GetStatusData(ctypes.byref(status), 0)
+        self.dll.GetStatusData(ctypes.byref(status), ctypes.c_int(self.active_channel))
         self._acquisition_status = status
 
 

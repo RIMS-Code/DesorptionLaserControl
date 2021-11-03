@@ -42,24 +42,6 @@ class DesorptionLaserControlGUI(QMainWindow):
         self.mainwidget = QWidget()
         self.setCentralWidget(self.mainwidget)
 
-        # initialize default configuration
-        self.config = ConfigManager()
-
-        # communication
-        self.mcs8a = None
-        self.power = None
-        self.power_curr_position = None
-        self.auto_control = None
-
-        # window stuff and version
-        self.title = "Desorption Laser Control, v" + self.version
-        self.width = 600
-        self.height = 20
-
-        # initialize menubar and items that are required in subroutines
-        self.menubar = self.menuBar()
-        self.menubar.setNativeMenuBar(False)
-
         # main widget
         self.increase_button = QPushButton("+")
         self.decrease_button = QPushButton("-")
@@ -70,6 +52,24 @@ class DesorptionLaserControlGUI(QMainWindow):
         self.goto_button = QPushButton("GoTo")
         self.auto_checkbox = QCheckBox("Automatic laser control")
         self.cps_label = QLabel()
+
+        # initialize default configuration
+        self.config = ConfigManager()
+
+        # communication
+        self.mcs8a = None
+        self.power = None
+        self._power_curr_position = None
+        self.auto_control = None
+
+        # window stuff and version
+        self.title = "Desorption Laser Control, v" + self.version
+        self.width = 600
+        self.height = 20
+
+        # initialize menubar and items that are required in subroutines
+        self.menubar = self.menuBar()
+        self.menubar.setNativeMenuBar(False)
 
         # init all
         self.init_configuration()
@@ -99,7 +99,7 @@ class DesorptionLaserControlGUI(QMainWindow):
 
         self.mcs8a = MCS8aComm(dllpath=self.config.get("MCS8a DLL"))
         try:
-            self.power = PowerControl(self.config.get("Port"))
+            self.power = PowerControl(self.config.get("Port"), gui=self)
         except TimeoutError:
             QMessageBox.warning(
                 self,
@@ -108,6 +108,15 @@ class DesorptionLaserControlGUI(QMainWindow):
                 "Please check your settings.",
             )
             return
+        except serial.serialutil.SerialException:
+            QMessageBox.warning(
+                self,
+                "Couldn't communicate",
+                "Communication with the rotation failed. "
+                "Please check your settings.",
+            )
+            return
+
         except IndexError:
             QMessageBox.warning(
                 self,
@@ -118,7 +127,6 @@ class DesorptionLaserControlGUI(QMainWindow):
 
         # get current position
         self.power_curr_position = self.power.ch.position.magnitude
-        self._set_position_label()
 
     def init_configuration(self):
         """Create / initialize local configuration."""
@@ -136,12 +144,14 @@ class DesorptionLaserControlGUI(QMainWindow):
             "ROI Min (cps)": "500",
             "ROI Max (cps)": "1500",
             "ROI burst (cps)": "2000",
-            "Regulate every (s)": 1,
+            "Regulate every (s)": 3,
+            "TDC Channel": 1,
         }
 
         metadata = {
             "Port": {"prefer_hidden": True},
             "man_step": {"prefer_hidden": True},
+            "TDC Channel": {"prefer_hidden": True},  # fixme
         }
 
         self.config = ConfigManager(default_settings, filename=conf_file)
@@ -248,7 +258,6 @@ class DesorptionLaserControlGUI(QMainWindow):
             # fixme: ik has some issue here with received answer
             pass
         self.power_curr_position = pos
-        self._set_position_label()
 
     def home(self):
         """Home the stage."""
@@ -258,7 +267,6 @@ class DesorptionLaserControlGUI(QMainWindow):
             # fixme: ik has some issue here with received answer
             pass
         self.power_curr_position = 0
-        self._set_position_label()
 
     def laser_control(self):
         """Automatic control."""
@@ -275,6 +283,8 @@ class DesorptionLaserControlGUI(QMainWindow):
                 int(self.config.get("ROI Min (cps)")),
                 int(self.config.get("ROI Max (cps)")),
                 int(self.config.get("ROI burst (cps)")),
+                1  # only channel 1 works at this point
+                # self.config.get("TDC Channel"),
             )
             self.auto_control.activate()
         else:  # turn off
@@ -291,7 +301,6 @@ class DesorptionLaserControlGUI(QMainWindow):
             # fixme: ik has some issue here with received answer
             pass
         self.power_curr_position -= step
-        self._set_position_label()
 
     def manual_increase(self):
         """Increase by manual step."""
@@ -302,6 +311,15 @@ class DesorptionLaserControlGUI(QMainWindow):
             # fixme: ik has some issue here with received answer
             pass
         self.power_curr_position += step
+
+    @property
+    def power_curr_position(self):
+        """Set / get current position"""
+        return self._power_curr_position
+
+    @power_curr_position.setter
+    def power_curr_position(self, value):
+        self._power_curr_position = value
         self._set_position_label()
 
     def _set_position_label(self):

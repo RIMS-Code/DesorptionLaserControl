@@ -11,7 +11,7 @@ class PowerControl:
     Fixme: Some warning is received on Windows when moving... oh well for now
     """
 
-    def __init__(self, port: str, baud: int = 115200) -> None:
+    def __init__(self, port: str, baud: int = 115200, gui=None) -> None:
         """Initializes communication with the rotation stage.
 
         Fixme: Incorporate Backlash correction -> turn it off (needs ik incorporation)
@@ -30,6 +30,8 @@ class PowerControl:
         # enable communication with cube and set channel
         self.kdc = ik.thorlabs.APTMotorController.open_serial(port, baud=baud)
         self.ch = self.kdc.channel[0]
+
+        self.gui = gui
 
         self.ch.motor_model = self._motor_model
 
@@ -82,7 +84,11 @@ class PowerControl:
 
     def decrease(self) -> None:
         """Decrease by one step."""
-        self.ch.move(-self._step_down, absolute=False)
+        try:
+            self.ch.move(-self._step_down, absolute=False)
+        except OSError:
+            # fixme: ik has some issue here with received answer
+            pass
 
     def decrease_emergency(self) -> None:
         """Decrease by emergency step."""
