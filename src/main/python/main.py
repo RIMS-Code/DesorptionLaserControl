@@ -77,7 +77,7 @@ class DesorptionLaserControlGUI(QMainWindow):
         self.init_menubar()
         self.init_ui()
 
-        self.show()
+        self.show(/home/reto/Documents/code/RIMS-Code/RIMSEval/docs/dev/api)
 
     def init_comms(self):
         """Initialize comms."""

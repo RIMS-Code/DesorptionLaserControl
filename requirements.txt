@@ -1,4 +1,4 @@
-git+https://www.github.com/Galvant/InstrumentKit.git
 PyQt6
+pyqtdarktheme
 git+https://github.com/trappitsch/pyqtconfig@DialogBox_fixes_for_PyQt6
-pyserial
+git+https://www.github.com/Galvant/InstrumentKit.git
