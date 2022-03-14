@@ -1,7 +1,7 @@
 """Automatically control the desorption laser power."""
 
 # from PyQt5.QtWidgets import QMessageBox
-from PyQt5.QtCore import QTimer
+from PyQt6.QtCore import QTimer
 
 from mcs8a import MCS8aComm
 from power_control import PowerControl

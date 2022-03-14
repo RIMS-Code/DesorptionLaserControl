@@ -1,7 +1,7 @@
-from fbs_runtime.application_context.PyQt5 import ApplicationContext
-from PyQt5.QtWidgets import (
+from fbs_runtime.application_context.PyQt6 import ApplicationContext
+from PyQt6.QtGui import QAction
+from PyQt6.QtWidgets import (
     QMainWindow,
-    QAction,
     QInputDialog,
     QMessageBox,
     QPushButton,
@@ -9,13 +9,11 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QVBoxLayout,
     QLabel,
-    QLineEdit,
     QDoubleSpinBox,
     QWidget,
 )
-from PyQt5 import Qt
 
-import os, sys
+import sys
 from pathlib import Path
 from typing import Union
 
@@ -77,7 +75,7 @@ class DesorptionLaserControlGUI(QMainWindow):
         self.init_menubar()
         self.init_ui()
 
-        self.show(/home/reto/Documents/code/RIMS-Code/RIMSEval/docs/dev/api)
+        self.show()
 
     def init_comms(self):
         """Initialize comms."""
@@ -336,5 +334,5 @@ class DesorptionLaserControlGUI(QMainWindow):
 if __name__ == "__main__":
     appctxt = ApplicationContext()  # 1. Instantiate ApplicationContext
     app = DesorptionLaserControlGUI()
-    exit_code = appctxt.app.exec_()  # 2. Invoke appctxt.app.exec_()
+    exit_code = appctxt.app.exec()  # 2. Invoke appctxt.app.exec_()
     sys.exit(exit_code)
