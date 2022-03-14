@@ -9,6 +9,10 @@
  - Communications with APT Half-Wave plates is now implemented via USB and not via COM port
  - User can define laser profiles, save them, and easily switch between lasers
 
+**Important**:
+
+If you had a previous version of the program installed, install the new software. Before starting it, go to your user folder and delete the `config.json` file in `AppData\Roaming\DesorptionLaserControl\`. 
+
 **Behind the scenes changes:**
 
  - Upgrade to PyQt6

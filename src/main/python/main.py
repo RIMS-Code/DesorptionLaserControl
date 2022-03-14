@@ -1,6 +1,7 @@
 from fbs_runtime.application_context.PyQt6 import ApplicationContext
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
+    QComboBox,
     QMainWindow,
     QInputDialog,
     QMessageBox,
@@ -12,6 +13,7 @@ from PyQt6.QtWidgets import (
     QDoubleSpinBox,
     QWidget,
 )
+import qdarktheme
 
 import sys
 from pathlib import Path
@@ -24,6 +26,7 @@ import serial.tools.list_ports
 from auto_control import LaserAutoControl
 from power_control import PowerControl
 from mcs8a import MCS8aComm
+import widgets
 
 
 class DesorptionLaserControlGUI(QMainWindow):
@@ -43,7 +46,6 @@ class DesorptionLaserControlGUI(QMainWindow):
         # main widget
         self.increase_button = QPushButton("+")
         self.decrease_button = QPushButton("-")
-        self.home_button = QPushButton("Home")
         self.position_label = QLabel()
         self.manual_step_edit = QDoubleSpinBox()
         self.set_position = QDoubleSpinBox()
@@ -93,9 +95,9 @@ class DesorptionLaserControlGUI(QMainWindow):
                 "MCS8a DLL missing",
                 "Please select a valid MCS8a DLL in the settings.",
             )
-            return
+        else:
+            self.mcs8a = MCS8aComm(dllpath=self.config.get("MCS8a DLL"))
 
-        self.mcs8a = MCS8aComm(dllpath=self.config.get("MCS8a DLL"))
         try:
             self.power = PowerControl(self.config.get("Port"), gui=self)
         except TimeoutError:
@@ -139,21 +141,33 @@ class DesorptionLaserControlGUI(QMainWindow):
             "Power up (deg)": 0.1,
             "Power down (deg)": 0.1,
             "Power down fast (deg)": 3.0,
-            "ROI Min (cps)": "500",
-            "ROI Max (cps)": "1500",
-            "ROI burst (cps)": "2000",
+            "ROI Min (cps)": 500,
+            "ROI Max (cps)": 1500,
+            "ROI burst (cps)": 2000,
             "Regulate every (s)": 3,
             "TDC Channel": 1,
+            "Display Precision": 3,
+            "GUI Theme": "light",
         }
 
         metadata = {
             "Port": {"prefer_hidden": True},
             "man_step": {"prefer_hidden": True},
+            "ROI Min (cps)": {"preferred_handler": widgets.LargeQSpinBox},
+            "ROI Max (cps)": {"preferred_handler": widgets.LargeQSpinBox},
+            "ROI burst (cps)": {"preferred_handler": widgets.LargeQSpinBox},
+            "GUI Theme": {
+                "preferred_handler": QComboBox,
+                "preferred_map_dict": {"Dark": "dark", "Light": "light"},
+            },
             "TDC Channel": {"prefer_hidden": True},  # fixme
         }
 
         self.config = ConfigManager(default_settings, filename=conf_file)
         self.config.set_many_metadata(metadata)
+        self.config.save()
+
+        self._set_theme()
 
     def init_menubar(self):
         """Set up the menu bar."""
@@ -165,11 +179,21 @@ class DesorptionLaserControlGUI(QMainWindow):
         file_menu.addAction(file_menu_init)
 
         file_menu_exit = QAction("Exit", self)
+        file_menu_exit.setShortcut("Ctrl+q")
         file_menu_exit.triggered.connect(self.close)
         file_menu.addAction(file_menu_exit)
 
+        # Stage Menu
+
+        stage_menu = self.menubar.addMenu("&Stage")
+
+        stage_menu_home = QAction("Home Stage", self)
+        stage_menu_home.setStatusTip("Home the Stage and set to zero.")
+        stage_menu_home.triggered.connect(self.home)
+        stage_menu.addAction(stage_menu_home)
+
         # Settings Menu
-        settings_menu = self.menubar.addMenu("&Settings")
+        settings_menu = self.menubar.addMenu("Settings")
 
         settings_menu_stage = QAction("Select Rotation Stage", self)
         settings_menu_stage.triggered.connect(self.config_rotation_stage)
@@ -199,7 +223,6 @@ class DesorptionLaserControlGUI(QMainWindow):
         tmphlay.addWidget(self.set_position)
         tmphlay.addWidget(self.goto_button)
         tmphlay.addStretch()
-        tmphlay.addWidget(self.home_button)
         layout.addLayout(tmphlay)
 
         tmphlay = QHBoxLayout()
@@ -217,11 +240,10 @@ class DesorptionLaserControlGUI(QMainWindow):
         self.increase_button.clicked.connect(self.manual_increase)
         self.decrease_button.clicked.connect(self.manual_decrease)
         self.auto_checkbox.stateChanged.connect(self.laser_control)
-        self.home_button.clicked.connect(self.home)
         self.goto_button.clicked.connect(self.goto)
 
     def config_dialog(self):
-        """Execute the config dialog. """
+        """Execute the config dialog."""
         config_dialog = ConfigDialog(self.config, self, cols=1)
         config_dialog.setWindowTitle("Settings")
         config_dialog.accepted.connect(lambda: self.config_update(config_dialog.config))
@@ -245,6 +267,7 @@ class DesorptionLaserControlGUI(QMainWindow):
     def config_update(self, update):
         """Update the configuration."""
         self.config.set_many(update.as_dict())
+        self._set_theme()
         self.config.save()
 
     def goto(self):
@@ -278,11 +301,10 @@ class DesorptionLaserControlGUI(QMainWindow):
                 self.config.get("Power up (deg)"),
                 self.config.get("Power down (deg)"),
                 self.config.get("Power down fast (deg)"),
-                int(self.config.get("ROI Min (cps)")),
-                int(self.config.get("ROI Max (cps)")),
-                int(self.config.get("ROI burst (cps)")),
-                1  # only channel 1 works at this point
-                # self.config.get("TDC Channel"),
+                self.config.get("ROI Min (cps)"),
+                self.config.get("ROI Max (cps)"),
+                self.config.get("ROI burst (cps)"),
+                self.config.get("TDC Channel"),
             )
             self.auto_control.activate()
         else:  # turn off
@@ -329,6 +351,14 @@ class DesorptionLaserControlGUI(QMainWindow):
     def _set_cps_label(self, value: Union[int, float]):
         """Set counts per second label."""
         self.cps_label.setText(f"ROI: {int(value)} cps")
+
+    def _set_theme(self):
+        """Set the GUI theme."""
+        theme = self.config.get("GUI Theme")
+        if theme == "dark":
+            self.setStyleSheet(qdarktheme.load_stylesheet("dark"))
+        else:
+            self.setStyleSheet(qdarktheme.load_stylesheet("light"))
 
 
 if __name__ == "__main__":
