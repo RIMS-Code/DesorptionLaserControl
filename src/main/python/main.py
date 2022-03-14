@@ -281,6 +281,9 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
 
         goto_zero_button = QtWidgets.QPushButton("Zero")
         goto_zero_button.setShortcut("Ctrl+0")
+        goto_zero_button.setToolTip(
+            "Move to zero degrees\n" "Keyboard shortcut: Ctrl+0"
+        )
         goto_zero_button.clicked.connect(lambda: self.move_abs(0))
 
         tmphlay = QtWidgets.QHBoxLayout()
