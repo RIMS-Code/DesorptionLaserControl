@@ -1,18 +1,6 @@
 from fbs_runtime.application_context.PyQt6 import ApplicationContext
-from PyQt6.QtGui import QAction
-from PyQt6.QtWidgets import (
-    QComboBox,
-    QMainWindow,
-    QInputDialog,
-    QMessageBox,
-    QPushButton,
-    QCheckBox,
-    QHBoxLayout,
-    QVBoxLayout,
-    QLabel,
-    QDoubleSpinBox,
-    QWidget,
-)
+from PyQt6 import QtCore, QtGui, QtWidgets
+
 import qdarktheme
 
 import sys
@@ -29,7 +17,7 @@ from mcs8a import MCS8aComm
 import widgets
 
 
-class DesorptionLaserControlGUI(QMainWindow):
+class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
     """GUI for controlling the desorption laser automatically and by itself."""
 
     def __init__(self):
@@ -40,18 +28,19 @@ class DesorptionLaserControlGUI(QMainWindow):
         self.author = "Reto Trappitsch"
 
         # main widget
-        self.mainwidget = QWidget()
+        self.mainwidget = QtWidgets.QWidget()
         self.setCentralWidget(self.mainwidget)
 
         # main widget
-        self.increase_button = QPushButton("+")
-        self.decrease_button = QPushButton("-")
-        self.position_label = QLabel()
-        self.manual_step_edit = QDoubleSpinBox()
-        self.set_position = QDoubleSpinBox()
-        self.goto_button = QPushButton("GoTo")
-        self.auto_checkbox = QCheckBox("Automatic laser control")
-        self.cps_label = QLabel()
+        self.increase_button = QtWidgets.QPushButton("+")
+        self.decrease_button = QtWidgets.QPushButton("-")
+        self.burst_button = QtWidgets.QPushButton("Burst -")
+        self.position_label = QtWidgets.QLabel()
+        self.manual_step_edit = QtWidgets.QDoubleSpinBox()
+        self.set_position = QtWidgets.QDoubleSpinBox()
+        self.goto_button = QtWidgets.QPushButton("GoTo")
+        self.auto_checkbox = QtWidgets.QCheckBox("Automatic laser control")
+        self.cps_label = QtWidgets.QLabel()
 
         # initialize default configuration
         self.config = ConfigManager()
@@ -82,7 +71,7 @@ class DesorptionLaserControlGUI(QMainWindow):
     def init_comms(self):
         """Initialize comms."""
         if self.config.get("Port") is None:
-            QMessageBox.warning(
+            QtWidgets.QMessageBox.warning(
                 self,
                 "No rotation stage selected",
                 "Please select a rotation stage port to control the " "laser power.",
@@ -90,7 +79,7 @@ class DesorptionLaserControlGUI(QMainWindow):
             return
 
         if not Path(self.config.get("MCS8a DLL")).is_file():
-            QMessageBox.warning(
+            QtWidgets.QMessageBox.warning(
                 self,
                 "MCS8a DLL missing",
                 "Please select a valid MCS8a DLL in the settings.",
@@ -101,7 +90,7 @@ class DesorptionLaserControlGUI(QMainWindow):
         try:
             self.power = PowerControl(self.config.get("Port"), gui=self)
         except TimeoutError:
-            QMessageBox.warning(
+            QtWidgets.QMessageBox.warning(
                 self,
                 "Timeout",
                 "Communication with the rotation stage timed out. "
@@ -109,7 +98,7 @@ class DesorptionLaserControlGUI(QMainWindow):
             )
             return
         except serial.serialutil.SerialException:
-            QMessageBox.warning(
+            QtWidgets.QMessageBox.warning(
                 self,
                 "Couldn't communicate",
                 "Communication with the rotation failed. "
@@ -118,7 +107,7 @@ class DesorptionLaserControlGUI(QMainWindow):
             return
 
         except IndexError:
-            QMessageBox.warning(
+            QtWidgets.QMessageBox.warning(
                 self,
                 "Index Error",
                 "It looks like the device you've chosen is not a rotation stage.",
@@ -136,7 +125,7 @@ class DesorptionLaserControlGUI(QMainWindow):
 
         default_settings = {
             "Port": None,
-            "man_step": 1.0,
+            "man_step": 0.1,
             "MCS8a DLL": "C:\Windows\System32\DMCS8.DLL",
             "Power up (deg)": 0.1,
             "Power down (deg)": 0.1,
@@ -146,7 +135,7 @@ class DesorptionLaserControlGUI(QMainWindow):
             "ROI burst (cps)": 2000,
             "Regulate every (s)": 3,
             "TDC Channel": 1,
-            "Display Precision": 3,
+            "Display Precision": 2,
             "GUI Theme": "light",
         }
 
@@ -157,7 +146,7 @@ class DesorptionLaserControlGUI(QMainWindow):
             "ROI Max (cps)": {"preferred_handler": widgets.LargeQSpinBox},
             "ROI burst (cps)": {"preferred_handler": widgets.LargeQSpinBox},
             "GUI Theme": {
-                "preferred_handler": QComboBox,
+                "preferred_handler": QtWidgets.QComboBox,
                 "preferred_map_dict": {"Dark": "dark", "Light": "light"},
             },
             "TDC Channel": {"prefer_hidden": True},  # fixme
@@ -174,11 +163,11 @@ class DesorptionLaserControlGUI(QMainWindow):
         # File Menu
         file_menu = self.menubar.addMenu("&File")
 
-        file_menu_init = QAction("Initialize", self)
+        file_menu_init = QtGui.QAction("Initialize", self)
         file_menu_init.triggered.connect(self.init_comms)
         file_menu.addAction(file_menu_init)
 
-        file_menu_exit = QAction("Exit", self)
+        file_menu_exit = QtGui.QAction("Exit", self)
         file_menu_exit.setShortcut("Ctrl+q")
         file_menu_exit.triggered.connect(self.close)
         file_menu.addAction(file_menu_exit)
@@ -187,45 +176,127 @@ class DesorptionLaserControlGUI(QMainWindow):
 
         stage_menu = self.menubar.addMenu("&Stage")
 
-        stage_menu_home = QAction("Home Stage", self)
-        stage_menu_home.setStatusTip("Home the Stage and set to zero.")
+        stage_menu_home = QtGui.QAction("Home Stage", self)
+        stage_menu_home.setToolTip("Home the Stage and set to zero.")
         stage_menu_home.triggered.connect(self.home)
         stage_menu.addAction(stage_menu_home)
 
         # Settings Menu
         settings_menu = self.menubar.addMenu("Settings")
 
-        settings_menu_stage = QAction("Select Rotation Stage", self)
+        settings_menu_stage = QtGui.QAction("Select Rotation Stage", self)
         settings_menu_stage.triggered.connect(self.config_rotation_stage)
         settings_menu.addAction(settings_menu_stage)
 
-        settings_menu_config = QAction("Configuration", self)
+        settings_menu_config = QtGui.QAction("Configuration", self)
         settings_menu_config.triggered.connect(self.config_dialog)
         settings_menu.addAction(settings_menu_config)
 
     def init_ui(self):
         """Initialize the UI."""
-        layout = QVBoxLayout()
+
+        def hseparator(width: int = 3) -> QtWidgets.QFrame:
+            """Create a horizontal separator and return it.
+
+            :param width: linewidth, defaults to 3
+
+            :return: QFrame separator line.
+            """
+            sep = QtWidgets.QFrame()
+            sep.setFrameShape(QtWidgets.QFrame.Shape.VLine)
+            sep.setSizePolicy(
+                QtWidgets.QSizePolicy.Policy.Expanding,
+                QtWidgets.QSizePolicy.Policy.Minimum,
+            )
+            sep.setLineWidth(width)
+            return sep
+
+        def vseparator(width: int = 3) -> QtWidgets.QFrame:
+            """Create a separator and return it.
+
+            :param width: linewidth, defaults to 3
+
+            :return: QFrame separator line.
+            """
+            sep = QtWidgets.QFrame()
+            sep.setFrameShape(QtWidgets.QFrame.Shape.HLine)
+            sep.setSizePolicy(
+                QtWidgets.QSizePolicy.Policy.Minimum,
+                QtWidgets.QSizePolicy.Policy.Expanding,
+            )
+            sep.setLineWidth(width)
+            return sep
+
+        layout = QtWidgets.QVBoxLayout()
 
         self.mainwidget.setLayout(layout)
 
-        layout.addWidget(self.position_label)
+        # position label
+        pos_font = QtGui.QFont()
+        pos_font.setPixelSize(32)
+        pos_font.setBold(True)
+        self.position_label.setFont(pos_font)
+        self.position_label.setToolTip("Current position")
 
-        tmphlay = QHBoxLayout()
+        pos_layout = QtWidgets.QHBoxLayout()
+        pos_layout.addStretch()
+        pos_layout.addWidget(self.position_label)
+        pos_layout.addStretch()
+        layout.addLayout(pos_layout)
+
+        layout.addWidget(vseparator())
+
+        # tooltips and shortcuts
+        self.decrease_button.setShortcut("-")
+        self.decrease_button.setToolTip(
+            "Decrase power by set increment\n" "Keyboard shortcut: -"
+        )
+        self.increase_button.setShortcut("=")
+        self.increase_button.setToolTip(
+            "Increase power by set increment\n" "Keyboard shortcut: ="
+        )
+        self.burst_button.setShortcut("0")
+        self.burst_button.setToolTip(
+            "Burst / emergency decrease power\n" "Keyboard shortcut: 0"
+        )
+
+        # set precision / tuning
+        self.manual_step_edit.setSingleStep(0.1)
+
+        # increase / decrease / burst
+
+        tmphlay = QtWidgets.QHBoxLayout()
         tmphlay.addWidget(self.decrease_button)
-        tmphlay.addStretch()
         tmphlay.addWidget(self.manual_step_edit)
-        tmphlay.addStretch()
         tmphlay.addWidget(self.increase_button)
         layout.addLayout(tmphlay)
 
-        tmphlay = QHBoxLayout()
-        tmphlay.addWidget(self.set_position)
-        tmphlay.addWidget(self.goto_button)
-        tmphlay.addStretch()
+        tmphlay = QtWidgets.QHBoxLayout()
+        tmphlay.addWidget(self.burst_button)
         layout.addLayout(tmphlay)
 
-        tmphlay = QHBoxLayout()
+        layout.addWidget(vseparator())
+
+        # Go To actions
+
+        goto_zero_button = QtWidgets.QPushButton("Zero")
+        goto_zero_button.setShortcut("Ctrl+0")
+        goto_zero_button.clicked.connect(lambda: self.move_abs(0))
+
+        tmphlay = QtWidgets.QHBoxLayout()
+        tmphlay.addWidget(goto_zero_button)
+        tmphlay.addStretch()
+        tmphlay.addWidget(hseparator())
+        tmphlay.addStretch()
+        tmphlay.addWidget(self.set_position)
+        tmphlay.addWidget(self.goto_button)
+        layout.addLayout(tmphlay)
+
+        layout.addWidget(vseparator())
+
+        # automatic control
+
+        tmphlay = QtWidgets.QHBoxLayout()
         tmphlay.addWidget(self.auto_checkbox)
         tmphlay.addStretch()
         tmphlay.addWidget(self.cps_label)
@@ -239,6 +310,7 @@ class DesorptionLaserControlGUI(QMainWindow):
         self.manual_step_edit.valueChanged.connect(lambda x: self.config.save())
         self.increase_button.clicked.connect(self.manual_increase)
         self.decrease_button.clicked.connect(self.manual_decrease)
+        self.burst_button.clicked.connect(self.manual_burst_decrease)
         self.auto_checkbox.stateChanged.connect(self.laser_control)
         self.goto_button.clicked.connect(self.goto)
 
@@ -256,7 +328,7 @@ class DesorptionLaserControlGUI(QMainWindow):
         for port, desc, hwid in sorted(ports):
             ports_list.append(f"{port}: {desc} [{hwid}]")
 
-        item, ok = QInputDialog.getItem(
+        item, ok = QtWidgets.QInputDialog.getItem(
             self, "Select port of Rotation Stage", "Ports", ports_list, 0, False
         )
 
@@ -273,12 +345,7 @@ class DesorptionLaserControlGUI(QMainWindow):
     def goto(self):
         """Goto a user set position."""
         pos = self.set_position.value()
-        try:
-            self.power.ch.move(pos * u.degree)
-        except OSError:
-            # fixme: ik has some issue here with received answer
-            pass
-        self.power_curr_position = pos
+        self.move_abs(pos)
 
     def home(self):
         """Home the stage."""
@@ -315,22 +382,41 @@ class DesorptionLaserControlGUI(QMainWindow):
     def manual_decrease(self):
         """Increase by manual step."""
         step = self.manual_step_edit.value()
-        try:
-            self.power.ch.move(-step * u.degree, absolute=False)
-        except OSError:
-            # fixme: ik has some issue here with received answer
-            pass
-        self.power_curr_position -= step
+        self.move_rel(-step)
+
+    def manual_burst_decrease(self):
+        """Increase by manual step."""
+        step = self.config.get("Power down fast (deg)")
+        self.move_rel(-step)
 
     def manual_increase(self):
         """Increase by manual step."""
         step = self.manual_step_edit.value()
+        self.move_rel(step)
+
+    def move_abs(self, val: float) -> None:
+        """Move stage to an absolute value in degrees.
+
+        :param val: Value to do got in degrees.
+        """
         try:
-            self.power.ch.move(step * u.degree, absolute=False)
+            self.power.ch.move(val * u.degree)
         except OSError:
             # fixme: ik has some issue here with received answer
             pass
-        self.power_curr_position += step
+        self.power_curr_position = val
+
+    def move_rel(self, val: float) -> None:
+        """Move stage relative by value in degrees.
+
+        :param val: Value to do got in degrees.
+        """
+        try:
+            self.power.ch.move(val * u.degree, absolute=False)
+        except OSError:
+            # fixme: ik has some issue here with received answer
+            pass
+        self.power_curr_position += val
 
     @property
     def power_curr_position(self):
@@ -344,9 +430,8 @@ class DesorptionLaserControlGUI(QMainWindow):
 
     def _set_position_label(self):
         """Set position label in degrees."""
-        self.position_label.setText(
-            f"Current position: {self.power_curr_position:.3f} deg"
-        )
+        prec = self.config.get("Display Precision")
+        self.position_label.setText(f"{self.power_curr_position:.{prec}f}\u00B0")
 
     def _set_cps_label(self, value: Union[int, float]):
         """Set counts per second label."""
