@@ -24,7 +24,7 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
         """Initialize software."""
         super(DesorptionLaserControlGUI, self).__init__()
 
-        self.version = "0.1.0"
+        self.version = "0.2.0"
         self.author = "Reto Trappitsch"
 
         # main widget
