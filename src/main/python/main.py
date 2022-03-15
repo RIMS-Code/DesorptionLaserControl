@@ -39,8 +39,11 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
         self.manual_step_edit = QtWidgets.QDoubleSpinBox()
         self.set_position = QtWidgets.QDoubleSpinBox()
         self.goto_button = QtWidgets.QPushButton("GoTo")
-        self.auto_checkbox = QtWidgets.QCheckBox("Automatic laser control")
+        self.auto_checkbox = QtWidgets.QCheckBox("Auto control")
         self.cps_label = QtWidgets.QLabel()
+
+        self.movement_buttons = None
+        self._buttons_active = True
 
         # initialize default configuration
         self.config = ConfigManager()
@@ -115,7 +118,7 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
             return
 
         # get current position
-        self.power_curr_position = self.power.ch.position.magnitude
+        self.power_curr_position_read()
 
     def init_configuration(self):
         """Create / initialize local configuration."""
@@ -175,6 +178,12 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
         # Stage Menu
 
         stage_menu = self.menubar.addMenu("&Stage")
+
+        stage_menu_read_pos = QtGui.QAction("Read position", self)
+        stage_menu_read_pos.setToolTip("Read current position of stage.")
+        stage_menu_read_pos.setShortcut("Ctrl+r")
+        stage_menu_read_pos.triggered.connect(self.power_curr_position_read)
+        stage_menu.addAction(stage_menu_read_pos)
 
         stage_menu_home = QtGui.QAction("Home Stage", self)
         stage_menu_home.setToolTip("Home the Stage and set to zero.")
@@ -284,7 +293,7 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
         goto_zero_button.setToolTip(
             "Move to zero degrees\n" "Keyboard shortcut: Ctrl+0"
         )
-        goto_zero_button.clicked.connect(lambda: self.move_abs(0))
+        goto_zero_button.clicked.connect(lambda: self.move(0, absolute=True))
 
         tmphlay = QtWidgets.QHBoxLayout()
         tmphlay.addWidget(goto_zero_button)
@@ -296,6 +305,8 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
         layout.addLayout(tmphlay)
 
         layout.addWidget(vseparator())
+
+        self.movement_buttons = [self.increase_button, self.decrease_button, self.burst_button, self.goto_button, goto_zero_button]
 
         # automatic control
 
@@ -316,6 +327,20 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
         self.burst_button.clicked.connect(self.manual_burst_decrease)
         self.auto_checkbox.stateChanged.connect(self.laser_control)
         self.goto_button.clicked.connect(self.goto)
+
+    @property
+    def buttons_active(self) -> bool:
+        """Get if the buttons are active or not.
+
+        :return: Are the buttons active?
+        """
+        return self._buttons_active
+
+    @buttons_active.setter
+    def buttons_active(self, value: bool):
+        for button in self.movement_buttons:
+            button.setEnabled(value)
+        self._buttons_active = value
 
     def config_dialog(self):
         """Execute the config dialog."""
@@ -348,16 +373,12 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
     def goto(self):
         """Goto a user set position."""
         pos = self.set_position.value()
-        self.move_abs(pos)
+        self.move(pos, absolute=True)
 
     def home(self):
         """Home the stage."""
-        try:
-            self.power.ch.go_home()
-        except OSError:
-            # fixme: ik has some issue here with received answer
-            pass
-        self.power_curr_position = 0
+        self.power.ch.go_home()
+        self.power_curr_position_read()
 
     def laser_control(self):
         """Automatic control."""
@@ -385,49 +406,42 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
     def manual_decrease(self):
         """Increase by manual step."""
         step = self.manual_step_edit.value()
-        self.move_rel(-step)
+        self.move(-step, absolute=False)
 
     def manual_burst_decrease(self):
         """Increase by manual step."""
         step = self.config.get("Power down fast (deg)")
-        self.move_rel(-step)
+        self.move(-step, absolute=False)
 
     def manual_increase(self):
         """Increase by manual step."""
         step = self.manual_step_edit.value()
-        self.move_rel(step)
+        self.move(step, absolute=False)
 
-    def move_abs(self, val: float) -> None:
+    def move(self, val: float, absolute: bool=True) -> None:
         """Move stage to an absolute value in degrees.
 
-        :param val: Value to do got in degrees.
-        """
-        try:
-            self.power.ch.move(val * u.degree)
-        except OSError:
-            # fixme: ik has some issue here with received answer
-            pass
-        self.power_curr_position = val
-
-    def move_rel(self, val: float) -> None:
-        """Move stage relative by value in degrees.
+        During movement, the whole widget is deactivated and subsequently reactivated.
 
         :param val: Value to do got in degrees.
+        :param absolute: Absolute move or not?
         """
-        try:
-            self.power.ch.move(val * u.degree, absolute=False)
-        except OSError:
-            # fixme: ik has some issue here with received answer
-            pass
-        self.power_curr_position += val
+        self.buttons_active = False
+        self.repaint()
+
+        self.power.ch.move(val * u.degree, absolute=absolute)
+        self.power_curr_position_read()
+
+        self.buttons_active = True
 
     @property
     def power_curr_position(self):
         """Set / get current position"""
         return self._power_curr_position
 
-    @power_curr_position.setter
-    def power_curr_position(self, value):
+    def power_curr_position_read(self):
+        """Read current position from Stage and set it to the value in degrees."""
+        value = self.power.ch.position.magnitude
         self._power_curr_position = value
         self._set_position_label()
 

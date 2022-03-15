@@ -6,15 +6,11 @@ from instruments import units as u
 
 
 class PowerControl:
-    """Commands used for this program to control half-wave plate.
-
-    Fixme: Some warning is received on Windows when moving... oh well for now
-    """
+    """Commands used for this program to control half-wave plate."""
 
     def __init__(self, port: str, baud: int = 115200, gui=None) -> None:
         """Initializes communication with the rotation stage.
 
-        Fixme: Incorporate Backlash correction -> turn it off (needs ik incorporation)
         Fixme: Add Offset setting in this software.
 
         :param port: Port the rotation stage can be found at.
@@ -34,6 +30,9 @@ class PowerControl:
         self.gui = gui
 
         self.ch.motor_model = self._motor_model
+
+        # turn off backlash correction
+        self.ch.backlash_correction = 0
 
     @property
     def motor_model(self) -> str:
@@ -84,35 +83,19 @@ class PowerControl:
 
     def decrease(self) -> None:
         """Decrease by one step."""
-        try:
-            self.ch.move(-self._step_down, absolute=False)
-        except OSError:
-            # fixme: ik has some issue here with received answer
-            pass
+        self.ch.move(-self._step_down, absolute=False)
 
     def decrease_emergency(self) -> None:
         """Decrease by emergency step."""
-        try:
-            self.ch.move(-self._step_down_em, absolute=False)
-        except OSError:
-            # fixme: ik has some issue here with received answer
-            pass
+        self.ch.move(-self._step_down_em, absolute=False)
 
     def home(self) -> None:
         """Home the device."""
-        try:
-            self.ch.go_home()
-        except OSError:
-            # fixme: ik has some issue here with received answer
-            pass
+        self.ch.go_home()
 
     def increase(self) -> None:
         """Increases by one step."""
-        try:
-            self.ch.move(self._step_up, absolute=False)
-        except OSError:
-            # fixme: ik has some issue here with received answer
-            pass
+        self.ch.move(self._step_up, absolute=False)
 
 
 if __name__ == "__main__":

@@ -91,16 +91,13 @@ class LaserAutoControl:
         # COMPARE
         if current_cps > self.range_emg:  # EMERGENCY TURN DOWN
             self.power.decrease_emergency()
-            # fixme: these updates really shouldn't be here.
-            self.parent.power_curr_position -= self.dec_emg
         elif current_cps < self.range_min + self.delta_range / 3:  # regular increase
             self.power.increase()
-            # fixme see above
-            self.parent.power_curr_position += self.inc_step
         elif current_cps > self.range_max - self.delta_range / 3:
             self.power.decrease()
-            # fixme see above
-            self.parent.power_curr_position -= self.dec_stp
+
+        # update display
+        self.parent.power_curr_position_read()
 
         status = self.mcs8a._acquisition_status
 
