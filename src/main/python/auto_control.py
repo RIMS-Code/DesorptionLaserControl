@@ -99,7 +99,7 @@ class LaserAutoControl:
         # update display
         self.parent.power_curr_position_read()
 
-        status = self.mcs8a._acquisition_status
+        # status = self.mcs8a.acquisition_status
 
         # QMessageBox.information(
         #     self.parent,

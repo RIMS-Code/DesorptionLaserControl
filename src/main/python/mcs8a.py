@@ -16,6 +16,11 @@ class MCS8aComm:
         self._acquisition_status = None
 
     @property
+    def acquisition_status(self):
+        """Get the acquisition status."""
+        return self._acquisition_status
+
+    @property
     def active_channel(self) -> int:
         """Get / set the active channel (starts counting at zero!)"""
         return self._active_channel
@@ -39,7 +44,7 @@ class MCS8aComm:
 
         :return: Range set.
         """
-        return NotImplementedError
+        raise NotImplementedError
 
     @range.setter
     def range(self, value: int):
@@ -58,6 +63,55 @@ class MCS8aComm:
         status = AcqStatus()
         self.dll.GetStatusData(ctypes.byref(status), ctypes.c_int(self.active_channel))
         self._acquisition_status = status
+
+
+class FakeMCS8aComm:
+    """A fake MCS8a instrument that can return some data."""
+
+    def __init__(self):
+        """Initialize fake MCS8a."""
+        self._active_channel = 0
+        # empty variables
+        self._acquisition_status = None
+
+    @property
+    def acquisition_status(self):
+        """Get the acquisition status."""
+        return self._acquisition_status
+
+    @property
+    def active_channel(self) -> int:
+        """Get / set the active channel (starts counting at zero!)"""
+        return self._active_channel
+
+    @active_channel.setter
+    def active_channel(self, value: int):
+        self._active_channel = value
+
+    @property
+    def is_measuring(self) -> bool:
+        """Get status if the device is measuring.
+
+        :return: We are measuring!
+        """
+        return True
+
+    @property
+    def range(self) -> int:
+        """Get / set the range of the recording.
+
+        :return: Range set.
+        """
+        raise NotImplementedError
+
+    @range.setter
+    def range(self, value: int):
+        print(f"Set range with value: {value}")
+
+    @property
+    def roi_rate(self) -> float:
+        """Get the rate countrate in counts per seconds in the ROI."""
+        return 500.2
 
 
 if __name__ == "__main__":

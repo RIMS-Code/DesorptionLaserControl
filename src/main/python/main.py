@@ -13,7 +13,7 @@ import serial.tools.list_ports
 
 from auto_control import LaserAutoControl
 from power_control import PowerControl
-from mcs8a import MCS8aComm
+from mcs8a import MCS8aComm, FakeMCS8aComm
 import widgets
 
 
@@ -23,6 +23,9 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
     def __init__(self):
         """Initialize software."""
         super(DesorptionLaserControlGUI, self).__init__()
+
+        # fixme: untoggle for deployment
+        self.use_fake_mcs8a = True
 
         self.version = "0.2.0"
         self.author = "Reto Trappitsch"
@@ -82,11 +85,17 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
             return
 
         if not Path(self.config.get("MCS8a DLL")).is_file():
-            QtWidgets.QMessageBox.warning(
-                self,
-                "MCS8a DLL missing",
-                "Please select a valid MCS8a DLL in the settings.",
-            )
+            if self.use_fake_mcs8a:
+                QtWidgets.QMessageBox.information(
+                    self, "Fake MCS8a", "No MCS8a DLL is present, so I'm faking it..."
+                )
+                self.mcs8a = FakeMCS8aComm()
+            else:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "MCS8a DLL missing",
+                    "Please select a valid MCS8a DLL in the settings.",
+                )
         else:
             self.mcs8a = MCS8aComm(dllpath=self.config.get("MCS8a DLL"))
 
@@ -306,7 +315,13 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
 
         layout.addWidget(vseparator())
 
-        self.movement_buttons = [self.increase_button, self.decrease_button, self.burst_button, self.goto_button, goto_zero_button]
+        self.movement_buttons = [
+            self.increase_button,
+            self.decrease_button,
+            self.burst_button,
+            self.goto_button,
+            goto_zero_button,
+        ]
 
         # automatic control
 
@@ -418,7 +433,7 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
         step = self.manual_step_edit.value()
         self.move(step, absolute=False)
 
-    def move(self, val: float, absolute: bool=True) -> None:
+    def move(self, val: float, absolute: bool = True) -> None:
         """Move stage to an absolute value in degrees.
 
         During movement, the whole widget is deactivated and subsequently reactivated.
