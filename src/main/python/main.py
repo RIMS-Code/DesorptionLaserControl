@@ -3,8 +3,8 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 
 import qdarktheme
 
-import sys
 from pathlib import Path
+import sys
 from typing import Union
 
 from instruments import units as u
@@ -14,7 +14,7 @@ import serial.tools.list_ports
 from auto_control import LaserAutoControl
 from power_control import PowerControl
 from mcs8a import MCS8aComm, FakeMCS8aComm
-import widgets
+import workers, widgets
 
 
 class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
@@ -24,11 +24,13 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
         """Initialize software."""
         super(DesorptionLaserControlGUI, self).__init__()
 
-        # fixme: untoggle for deployment
-        self.use_fake_mcs8a = True
+        self.use_fake_mcs8a = False
 
         self.version = "0.2.0"
         self.author = "Reto Trappitsch"
+
+        # threadpool
+        self.threadpool = QtCore.QThreadPool()
 
         # main widget
         self.mainwidget = QtWidgets.QWidget()
@@ -302,7 +304,7 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
         goto_zero_button.setToolTip(
             "Move to zero degrees\n" "Keyboard shortcut: Ctrl+0"
         )
-        goto_zero_button.clicked.connect(lambda: self.move(0, absolute=True))
+        goto_zero_button.clicked.connect(lambda: self.move_stage(0, absolute=True))
 
         tmphlay = QtWidgets.QHBoxLayout()
         tmphlay.addWidget(goto_zero_button)
@@ -378,6 +380,7 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
         if ok and item:
             self.config.set("Port", item.split(":")[0])
         self.config.save()
+        self.init_comms()
 
     def config_update(self, update):
         """Update the configuration."""
@@ -388,7 +391,7 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
     def goto(self):
         """Goto a user set position."""
         pos = self.set_position.value()
-        self.move(pos, absolute=True)
+        self.move_stage(pos, absolute=True)
 
     def home(self):
         """Home the stage."""
@@ -421,19 +424,19 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
     def manual_decrease(self):
         """Increase by manual step."""
         step = self.manual_step_edit.value()
-        self.move(-step, absolute=False)
+        self.move_stage(-step, absolute=False)
 
     def manual_burst_decrease(self):
         """Increase by manual step."""
         step = self.config.get("Power down fast (deg)")
-        self.move(-step, absolute=False)
+        self.move_stage(-step, absolute=False)
 
     def manual_increase(self):
         """Increase by manual step."""
         step = self.manual_step_edit.value()
-        self.move(step, absolute=False)
+        self.move_stage(step, absolute=False)
 
-    def move(self, val: float, absolute: bool = True) -> None:
+    def move_stage(self, val: float, absolute: bool = True) -> None:
         """Move stage to an absolute value in degrees.
 
         During movement, the whole widget is deactivated and subsequently reactivated.
@@ -441,13 +444,32 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
         :param val: Value to do got in degrees.
         :param absolute: Absolute move or not?
         """
+        # turn off auto control
+        if isinstance(self.auto_control, LaserAutoControl):
+            self.auto_control.deactivate()
+
         self.buttons_active = False
-        self.repaint()
+        self.auto_checkbox.setEnabled(False)
 
-        self.power.ch.move(val * u.degree, absolute=absolute)
+        # thread out movement
+        worker = workers.Worker(self.power.ch.move, val * u.degree, absolute=absolute)
+        worker.signals.error.connect(self.move_stage_error)
+        worker.signals.movement_finished.connect(self.move_stage_finished)
+        self.threadpool.start(worker)
+
+    def move_stage_error(self, msg) -> None:
+        """Accept the error of a movement, update the position, and unlock buttons."""
+        QtWidgets.QMessageBox.warning(self, "Movement error", msg)
+        self.move_stage_finished()
+
+    def move_stage_finished(self) -> None:
+        """Update GUI and unlock the buttons after a movement is done."""
         self.power_curr_position_read()
-
         self.buttons_active = True
+        self.auto_checkbox.setEnabled(True)
+
+        if isinstance(self.auto_control, LaserAutoControl):
+            self.auto_control.activate()
 
     @property
     def power_curr_position(self):
