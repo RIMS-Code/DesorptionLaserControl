@@ -51,7 +51,12 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
         self._buttons_active = True
 
         # initialize default configuration
-        self.config = ConfigManager()
+        self.config = None
+        self.laser_settings = None
+        self.conf_folder = Path.home().joinpath(
+            "AppData/Roaming/DesorptionLaserControl/"
+        )
+        self.laser_conf_folder = self.conf_folder.joinpath("lasers/")
 
         # communication
         self.mcs8a = None
@@ -70,6 +75,7 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
 
         # init all
         self.init_configuration()
+        self.init_laser_config()
         self.init_comms()
         self.init_menubar()
         self.init_ui()
@@ -133,9 +139,7 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
 
     def init_configuration(self):
         """Create / initialize local configuration."""
-        conf_file = Path.home().joinpath(
-            "AppData/Roaming/DesorptionLaserControl/config.json"
-        )
+        conf_file = self.conf_folder.joinpath("config.json")
 
         default_settings = {
             "Port": None,
@@ -151,6 +155,7 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
             "TDC Channel": 1,
             "Display Precision": 2,
             "GUI Theme": "light",
+            "laser_config": "default.json",
         }
 
         metadata = {
@@ -164,6 +169,7 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
                 "preferred_map_dict": {"Dark": "dark", "Light": "light"},
             },
             "TDC Channel": {"prefer_hidden": True},  # fixme
+            "laser_config": {"prefer_hidden": True},
         }
 
         self.config = ConfigManager(default_settings, filename=conf_file)
@@ -171,6 +177,22 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
         self.config.save()
 
         self._set_theme()
+
+    def init_laser_config(self):
+        """Create / initialize the local laser configuration."""
+        lconf_file = self.laser_conf_folder.joinpath(
+            self.config.get("laser_config")
+        ).with_suffix(".json")
+
+        default_lconf = {
+            "Laser Name": "default",
+            "Zero offset (deg)": 0.0,
+            "Lower limit (deg)": 0.0,
+            "Upper limit (deg)": 45.0,
+        }
+
+        self.laser_settings = ConfigManager(default_lconf, filename=lconf_file)
+        self.laser_settings.save()
 
     def init_menubar(self):
         """Set up the menu bar."""
@@ -200,6 +222,17 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
         stage_menu_home.setToolTip("Home the Stage and set to zero.")
         stage_menu_home.triggered.connect(self.home)
         stage_menu.addAction(stage_menu_home)
+
+        stage_menu_conf = QtGui.QAction("Configure Stage", self)
+        stage_menu_conf.setToolTip("Configure the given stage for a specific laser.")
+        stage_menu_conf.triggered.connect(self.laser_settings_dialog)
+        stage_menu.addSeparator()
+        stage_menu.addAction(stage_menu_conf)
+
+        stage_menu_load = QtGui.QAction("Load Configuration", self)
+        stage_menu_load.setToolTip("Load an existing stage configuration.")
+        stage_menu_load.triggered.connect(self.laser_settings_load)
+        stage_menu.addAction(stage_menu_load)
 
         # Settings Menu
         settings_menu = self.menubar.addMenu("Settings")
@@ -420,6 +453,46 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
             if self.auto_control is not None:
                 self.auto_control.deactivate()
             self.auto_control = None
+
+    def laser_settings_dialog(self):
+        """Execute the config dialog."""
+        laser_settings_dialog = ConfigDialog(self.laser_settings, self, cols=1)
+        laser_settings_dialog.setWindowTitle("Configure Laser")
+        laser_settings_dialog.accepted.connect(
+            lambda: self.laser_settings_update(laser_settings_dialog.config)
+        )
+        laser_settings_dialog.exec()
+
+    def laser_settings_load(self) -> None:
+        """Load an existing laser settings file."""
+        fname = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Open Laser Settings",
+            str(self.laser_conf_folder),
+            "JSON FIles (*.json)",
+        )[0]
+
+        if fname == "":
+            return
+
+        laser_settings_new = ConfigManager(
+            self.laser_settings.as_dict(),
+            filename=fname,
+        )
+        self.laser_settings = laser_settings_new
+
+    def laser_settings_update(self, update):
+        """Update the configuration."""
+        self.laser_settings.set_many(update.as_dict())
+        laser_name = self.laser_settings.get("Laser Name")
+        self.config.set("laser_config", laser_name)
+        self.config.save()
+        laser_settings_new = ConfigManager(
+            self.laser_settings.as_dict(),
+            filename=self.laser_conf_folder.joinpath(laser_name).with_suffix(".json"),
+        )
+        laser_settings_new.save()
+        self.laser_settings = laser_settings_new
 
     def manual_decrease(self):
         """Increase by manual step."""
