@@ -14,9 +14,6 @@ class LaserAutoControl:
         power: PowerControl,
         mcs8a: MCS8aComm,
         delta_t: float,
-        inc_stp: float,
-        dec_stp: float,
-        dec_emg: float,
         range_min: int,
         range_max: int,
         range_emg: int,
@@ -27,23 +24,12 @@ class LaserAutoControl:
         :param power: Instance of KDC cube for power
         :param mcs8a: Instance of MCS8a
         :param delta_t: How often to check? in seconds
-        :param inc_stp: Increase step
-        :param dec_stp: Decrease step
-        :param dec_emg: Emergency step down
         :param range_min: Minimum range
         :param range_max: Maximum range
         :param range_emg: Emergency range
         :param tdc_ch: Channel of the the TDC stop signal.
         """
         self.parent = parent
-
-        self.power = power
-        self.power.step_down = dec_stp
-        self.dec_stp = dec_stp
-        self.power.step_down_em = dec_emg
-        self.dec_emg = dec_emg
-        self.power.step_up = inc_stp
-        self.inc_step = inc_stp
 
         self.mcs8a = mcs8a
 
@@ -64,6 +50,9 @@ class LaserAutoControl:
 
     def activate(self):
         """Activate auto control."""
+        if self._is_running:  # already running...
+            return
+
         self._is_running = True
         self.wait_timer.timeout.connect(self.do_adjustment)
         self.do_adjustment()
@@ -90,14 +79,11 @@ class LaserAutoControl:
 
         # COMPARE
         if current_cps > self.range_emg:  # EMERGENCY TURN DOWN
-            self.power.decrease_emergency()
+            self.parent.auto_burst_decrease()
         elif current_cps < self.range_min + self.delta_range / 3:  # regular increase
-            self.power.increase()
+            self.parent.auto_increase()
         elif current_cps > self.range_max - self.delta_range / 3:
-            self.power.decrease()
-
-        # update display
-        self.parent.power_curr_position_read()
+            self.parent.auto_decrease()
 
         # status = self.mcs8a.acquisition_status
 

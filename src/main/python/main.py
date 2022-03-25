@@ -24,7 +24,7 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
         """Initialize software."""
         super(DesorptionLaserControlGUI, self).__init__()
 
-        self.use_fake_mcs8a = False
+        self.use_fake_mcs8a = True
 
         self.version = "0.2.0"
         self.author = "Reto Trappitsch"
@@ -53,6 +53,7 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
         # initialize default configuration
         self.config = None
         self.laser_settings = None
+        self.laser_settings_metadata = None
         self.conf_folder = Path.home().joinpath(
             "AppData/Roaming/DesorptionLaserControl/"
         )
@@ -186,12 +187,24 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
 
         default_lconf = {
             "Laser Name": "default",
-            "Zero offset (deg)": 0.0,
             "Lower limit (deg)": 0.0,
             "Upper limit (deg)": 45.0,
+            "Write offset to stage & home": False,
+            "Zero offset (deg)": 0.0,
+            "Current zero offset (deg)": 0.0,
         }
 
-        self.laser_settings = ConfigManager(default_lconf, filename=lconf_file)
+        metadata = {
+            "Lower limit (deg)": {"preferred_handler": widgets.AngleQDoubleSpinBox},
+            "Upper limit (deg)": {"preferred_handler": widgets.AngleQDoubleSpinBox},
+            "Zero offset (deg)": {"preferred_handler": widgets.AngleQDoubleSpinBox},
+            "Current zero offset (deg)": {
+                "preferred_handler": widgets.ReadOnlyQDoubleSpinBox
+            },
+        }
+        self.laser_settings_metadata = metadata
+
+        self.laser_settings_config_manager(default_lconf, lconf_file, metadata)
         self.laser_settings.save()
 
     def init_menubar(self):
@@ -428,7 +441,10 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
 
     def home(self):
         """Home the stage."""
+        timeout = self.power.ch.motion_timeout
+        self.power.ch.motion_timeout = 100 * u.sec
         self.power.ch.go_home()
+        self.power.ch.motion_timeout = timeout
         self.power_curr_position_read()
 
     def laser_control(self):
@@ -440,9 +456,6 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
                 self.power,
                 self.mcs8a,
                 self.config.get("Regulate every (s)"),
-                self.config.get("Power up (deg)"),
-                self.config.get("Power down (deg)"),
-                self.config.get("Power down fast (deg)"),
                 self.config.get("ROI Min (cps)"),
                 self.config.get("ROI Max (cps)"),
                 self.config.get("ROI burst (cps)"),
@@ -454,9 +467,33 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
                 self.auto_control.deactivate()
             self.auto_control = None
 
+    def laser_settings_config_manager(
+        self, conf: dict, fname: str, metadata: dict = None
+    ):
+        """Create a laser settings config manager with given config and metadata.
+
+        This also saves the config manager.
+        If the metadata are not specified, the ones saved in the class will be used.
+
+        :param conf: Configuration for the manager.
+        :param fname: File name to save it to.
+        :param metadata: Meta data for the configuration manager.
+        """
+        if metadata is None:
+            metadata = self.laser_settings_metadata
+
+        laser_settings_conf = ConfigManager(conf, filename=fname)
+        laser_settings_conf.set_many_metadata(metadata)
+        self.laser_settings = laser_settings_conf
+
     def laser_settings_dialog(self):
         """Execute the config dialog."""
-        laser_settings_dialog = ConfigDialog(self.laser_settings, self, cols=1)
+        current_offset = self.power.offset.magnitude
+        self.laser_settings.set("Current zero offset (deg)", current_offset)
+
+        self.laser_settings.set("Write offset to stage & home", False)
+
+        laser_settings_dialog = ConfigDialog(self.laser_settings, self, cols=2)
         laser_settings_dialog.setWindowTitle("Configure Laser")
         laser_settings_dialog.accepted.connect(
             lambda: self.laser_settings_update(laser_settings_dialog.config)
@@ -475,54 +512,88 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
         if fname == "":
             return
 
-        laser_settings_new = ConfigManager(
-            self.laser_settings.as_dict(),
-            filename=fname,
-        )
-        self.laser_settings = laser_settings_new
+        self.laser_settings_config_manager(self.laser_settings.as_dict(), fname)
+        self.laser_settings_set_offset(force=True)
+        self.config.set("laser_config", self.laser_settings.get("Laser Name"))
+        self.config.save()
 
     def laser_settings_update(self, update):
         """Update the configuration."""
-        self.laser_settings.set_many(update.as_dict())
-        laser_name = self.laser_settings.get("Laser Name")
+        laser_name = update.as_dict()["Laser Name"]
         self.config.set("laser_config", laser_name)
         self.config.save()
-        laser_settings_new = ConfigManager(
-            self.laser_settings.as_dict(),
-            filename=self.laser_conf_folder.joinpath(laser_name).with_suffix(".json"),
-        )
-        laser_settings_new.save()
-        self.laser_settings = laser_settings_new
+
+        fname = self.laser_conf_folder.joinpath(laser_name).with_suffix(".json")
+        self.laser_settings_config_manager(self.laser_settings.as_dict(), fname)
+        self.laser_settings.set_many(update.as_dict())
+        self.laser_settings.save()
+        self.laser_settings_set_offset()
+
+    def laser_settings_set_offset(self, force: bool = False):
+        """Look at laser settings and set offset, if required by user.
+
+        :param force: Force the writing of the parameters and homing?
+        """
+        write_it = self.laser_settings.get("Write offset to stage & home")
+        user_offset = self.laser_settings.get("Zero offset (deg)")
+        if write_it or force:
+            self.power.offset = user_offset
+            self.home()
+
+    def auto_decrease(self):
+        """Decrease by automatic step."""
+        step = self.config.get("Power down (deg)")
+        self.move_stage(-step, absolute=False, is_auto=True)
+
+    def auto_burst_decrease(self):
+        """Decrease if burst occured -> fast."""
+        self.manual_burst_decrease(is_auto=True)
+
+    def auto_increase(self):
+        step = self.config.get("Power up (deg)")
+        self.move_stage(step, absolute=False, is_auto=True)
 
     def manual_decrease(self):
-        """Increase by manual step."""
+        """Decrease by manual step."""
         step = self.manual_step_edit.value()
         self.move_stage(-step, absolute=False)
 
-    def manual_burst_decrease(self):
-        """Increase by manual step."""
+    def manual_burst_decrease(self, is_auto=False):
+        """Decrease fast by manual burst step."""
         step = self.config.get("Power down fast (deg)")
-        self.move_stage(-step, absolute=False)
+        self.move_stage(-step, absolute=False, is_auto=True)
 
     def manual_increase(self):
         """Increase by manual step."""
         step = self.manual_step_edit.value()
         self.move_stage(step, absolute=False)
 
-    def move_stage(self, val: float, absolute: bool = True) -> None:
+    def move_stage(
+        self, val: float, absolute: bool = True, is_auto: bool = False
+    ) -> None:
         """Move stage to an absolute value in degrees.
 
         During movement, the whole widget is deactivated and subsequently reactivated.
 
         :param val: Value to do got in degrees.
         :param absolute: Absolute move or not?
+        :param is_auto: If we come from auto control, we don't want to turn it off.
         """
         # turn off auto control
-        if isinstance(self.auto_control, LaserAutoControl):
+        if isinstance(self.auto_control, LaserAutoControl) and not is_auto:
             self.auto_control.deactivate()
 
         self.buttons_active = False
         self.auto_checkbox.setEnabled(False)
+
+        # check limits
+        new_position = self.power_curr_position + val
+        if new_position < (limit := self.laser_settings.get("Lower limit (deg)")):
+            val = limit
+            absolute = True
+        elif new_position > (limit := self.laser_settings.get("Upper limit (deg)")):
+            val = limit
+            absolute = True
 
         # thread out movement
         worker = workers.Worker(self.power.ch.move, val * u.degree, absolute=absolute)
