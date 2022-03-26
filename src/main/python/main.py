@@ -26,7 +26,7 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
 
         self.use_fake_mcs8a = True
 
-        self.version = "0.2.0"
+        self.version = "0.3.0"
         self.author = "Reto Trappitsch"
 
         # threadpool
