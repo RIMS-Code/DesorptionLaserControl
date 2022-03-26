@@ -12,6 +12,15 @@ class LargeQSpinBox(QtWidgets.QSpinBox):
         self.setMaximum(99999)
 
 
+class RegulateEverySpinbox(QtWidgets.QSpinBox):
+    """Spin box that starts at 1."""
+
+    def __init__(self, parent=None):
+        """Initialize the spin box and set new settings."""
+        super().__init__(parent)
+        self.setMinimum(1)
+
+
 class AngleQDoubleSpinBox(QtWidgets.QDoubleSpinBox):
     """Create a QDoubleSpinBox that can go plus / minus a full rotation."""
 

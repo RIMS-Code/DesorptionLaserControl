@@ -165,6 +165,7 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
             "ROI Min (cps)": {"preferred_handler": widgets.LargeQSpinBox},
             "ROI Max (cps)": {"preferred_handler": widgets.LargeQSpinBox},
             "ROI burst (cps)": {"preferred_handler": widgets.LargeQSpinBox},
+            "Regulate every (s)": {"preferred_handler": widgets.RegulateEverySpinbox},
             "GUI Theme": {
                 "preferred_handler": QtWidgets.QComboBox,
                 "preferred_map_dict": {"Dark": "dark", "Light": "light"},
@@ -352,6 +353,9 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
         )
         goto_zero_button.clicked.connect(lambda: self.move_stage(0, absolute=True))
 
+        self.set_position.setMinimum(-360)
+        self.set_position.setMaximum(360)
+
         tmphlay = QtWidgets.QHBoxLayout()
         tmphlay.addWidget(goto_zero_button)
         tmphlay.addStretch()
@@ -392,17 +396,19 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
         self.goto_button.clicked.connect(self.goto)
 
     @property
-    def buttons_active(self) -> bool:
+    def controls_active(self) -> bool:
         """Get if the buttons are active or not.
 
         :return: Are the buttons active?
         """
         return self._buttons_active
 
-    @buttons_active.setter
-    def buttons_active(self, value: bool):
+    @controls_active.setter
+    def controls_active(self, value: bool):
         for button in self.movement_buttons:
             button.setEnabled(value)
+        self.set_position.setEnabled(value)
+        self.manual_step_edit.setEnabled(value)
         self._buttons_active = value
 
     def config_dialog(self):
@@ -583,7 +589,7 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
         if isinstance(self.auto_control, LaserAutoControl) and not is_auto:
             self.auto_control.deactivate()
 
-        self.buttons_active = False
+        self.controls_active = False
         self.auto_checkbox.setEnabled(False)
 
         # check limits
@@ -609,7 +615,7 @@ class DesorptionLaserControlGUI(QtWidgets.QMainWindow):
     def move_stage_finished(self) -> None:
         """Update GUI and unlock the buttons after a movement is done."""
         self.power_curr_position_read()
-        self.buttons_active = True
+        self.controls_active = True
         self.auto_checkbox.setEnabled(True)
 
         if isinstance(self.auto_control, LaserAutoControl):
